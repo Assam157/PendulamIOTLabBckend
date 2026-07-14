@@ -16,8 +16,14 @@ except:
 # =========================
 # CONFIG
 # =========================
-# Download the Kaggle model .pt file and place it next to this script.
-MODEL_PATH = "./best.pt"   # <-- Updated to Kaggle model path
+ import kagglehub
+
+# Download the latest version of the model
+path = kagglehub.model_download("akashbabuji/pendulampositionseeker/pyTorch/default")
+# path points to a folder; look for the .pt file inside
+MODEL_PATH = f"{path}/best.pt"  # adjust filename if needed
+
+model = YOLO(MODEL_PATH)
 
 PIVOT_X, PIVOT_Y = 320, 50
 SMOOTH_N = 4
