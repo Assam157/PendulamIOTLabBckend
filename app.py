@@ -16,7 +16,7 @@ except:
 # =========================
 # CONFIG
 # =========================
-MODEL_PATH = "./LaterMadeModelWith120Epochs"
+MODEL_PATH = "./LaterMadeModelWith120Epochs.pt"
 
 PIVOT_X, PIVOT_Y = 320, 50
 SMOOTH_N = 4
