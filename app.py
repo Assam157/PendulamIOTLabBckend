@@ -1,4 +1,4 @@
-import os
+ import os
 import cv2
 import numpy as np
 import asyncio
@@ -160,3 +160,113 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+                # -------------------------------------------------
+            # Compute Pendulum State
+            # -------------------------------------------------
+
+            if found_bob:
+
+                cx_buf.append(cx)
+                cy_buf.append(cy)
+
+                cx_s = float(np.mean(cx_buf))
+                cy_s = float(np.mean(cy_buf))
+
+                dx = cx_s - PIVOT_X
+                dy = cy_s - PIVOT_Y
+
+                theta = float(np.arctan2(dx, dy))
+
+                length_px = float(np.hypot(dx, dy))
+                length_m = max(
+                    length_px / PIXELS_PER_METRE,
+                    0.05
+                )
+
+                now = time.perf_counter()
+
+                omega = prev_omega
+
+                if (
+                    prev_theta is not None
+                    and prev_time is not None
+                ):
+
+                    dt = now - prev_time
+
+                    if 0 < dt < 0.15:
+
+                        raw_omega = (
+                            theta - prev_theta
+                        ) / dt
+
+                        omega = (
+                            0.6 * raw_omega
+                            + 0.4 * prev_omega
+                        )
+
+                prev_theta = theta
+                prev_time = now
+                prev_omega = omega
+
+                state = {
+                    "theta": theta,
+                    "omega": omega,
+                    "length": length_m,
+                    "detected": True
+                }
+
+            else:
+
+                state = {
+                    "theta": 0.0,
+                    "omega": 0.0,
+                    "length": 1.0,
+                    "detected": False
+                }
+
+                cx_buf.clear()
+                cy_buf.clear()
+
+                prev_theta = None
+                prev_time = None
+
+            # -------------------------------------------------
+            # Send State
+            # -------------------------------------------------
+
+            await websocket.send_text(
+                json.dumps(state)
+            )
+
+    except WebSocketDisconnect:
+
+        logger.info("Client disconnected")
+
+    except Exception:
+
+        logger.exception("Unexpected error")
+
+    finally:
+
+        logger.info("Connection closed")
+
+
+# ==========================================================
+# MAIN
+# ==========================================================
+
+if __name__ == "__main__":
+
+    port = int(os.environ.get("PORT", 8000))
+
+    logger.info(
+        f"Starting server on 0.0.0.0:{port}"
+    )
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )
