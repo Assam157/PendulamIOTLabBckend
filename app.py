@@ -16,7 +16,7 @@ except:
 # =========================
 # CONFIG
 # =========================
- import kagglehub
+import kagglehub
 
 # Download the latest version of the model
 path = kagglehub.model_download("akashbabuji/pendulampositionseeker/pyTorch/default")
