@@ -7,33 +7,40 @@ import json
 import time
 from ultralytics import YOLO
 from collections import deque
+from websockets.asyncio.server import ServerConnection
 
 # =========================
 # CONFIG
 # =========================
-MODEL_PATH = r"./LaterModelMadeWith120Epochs.pt"
+MODEL_PATH = "./LaterModelMadeWith120Epochs.pt"
 
 PIVOT_X, PIVOT_Y = 320, 50
 SMOOTH_N = 4
 PIXELS_PER_METRE = 320.0
 
-# =========================
-# TRACKING PARAMETERS
-# =========================
 lk_params = dict(
     winSize=(21, 21),
     maxLevel=3,
     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 15, 0.03)
 )
 
-# Load YOLO model once
 model = YOLO(MODEL_PATH)
+
+# =========================
+# HEALTH CHECK (for Render port detection)
+# =========================
+async def health_check(connection: ServerConnection, request):
+    """Answer health check HTTP requests; allow WebSocket upgrades."""
+    # If the client wants to upgrade to WebSocket, do nothing (proceed)
+    if request.headers.get("Upgrade", "").lower() == "websocket":
+        return None
+    # Otherwise reply with a simple 200 OK
+    return connection.respond(200, "OK")
 
 # =========================
 # PER‑CLIENT PROCESSING
 # =========================
 async def handler(ws):
-    """Receives JPEG frames, runs YOLO + optical flow, returns pendulum state."""
     cx_buf = deque(maxlen=SMOOTH_N)
     cy_buf = deque(maxlen=SMOOTH_N)
     prev_theta = None
@@ -48,8 +55,6 @@ async def handler(ws):
         async for message in ws:
             if not isinstance(message, bytes):
                 continue
-
-            # Decode JPEG frame
             np_arr = np.frombuffer(message, np.uint8)
             frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if frame is None:
@@ -61,7 +66,7 @@ async def handler(ws):
             found_bob = False
             tracked = False
 
-            # 1. YOLO detection
+            # YOLO detection
             results = model(frame, verbose=False)
             for r in results:
                 for box in r.boxes:
@@ -76,7 +81,7 @@ async def handler(ws):
                 if found_bob:
                     break
 
-            # 2. Optical flow fallback
+            # Optical flow fallback
             if not found_bob and prev_point is not None and prev_gray is not None:
                 next_point, status, _ = cv2.calcOpticalFlowPyrLK(
                     prev_gray, gray, prev_point, None, **lk_params
@@ -89,19 +94,16 @@ async def handler(ws):
 
             prev_gray = gray.copy()
 
-            # 3. Process motion
             if found_bob:
                 cx_buf.append(cx)
                 cy_buf.append(cy)
                 cx_s = float(np.mean(cx_buf))
                 cy_s = float(np.mean(cy_buf))
-
                 dx = cx_s - PIVOT_X
                 dy = cy_s - PIVOT_Y
                 theta = float(np.arctan2(dx, dy))
                 length_px = float(np.hypot(dx, dy))
                 length_m = max(length_px / PIXELS_PER_METRE, 0.05)
-
                 now = time.perf_counter()
                 omega = prev_omega
                 if prev_theta is not None and prev_time is not None:
@@ -109,11 +111,9 @@ async def handler(ws):
                     if 0 < dt < 0.15:
                         raw_omega = (theta - prev_theta) / dt
                         omega = 0.6 * raw_omega + 0.4 * prev_omega
-
                 prev_theta = theta
                 prev_time = now
                 prev_omega = omega
-
                 state = {
                     "theta": theta,
                     "omega": omega,
@@ -144,9 +144,14 @@ async def handler(ws):
 # =========================
 async def main():
     port = int(os.environ.get("PORT", 8765))
-    async with websockets.serve(handler, "0.0.0.0", port):
-        print(f"WebSocket server running on 0.0.0.0:{port}")
-        await asyncio.Future()  # run forever
+    async with websockets.serve(
+        handler,
+        "0.0.0.0",
+        port,
+        process_request=health_check     # ← this fixes the health check
+    ):
+        print(f"WebSocket server (with health check) on 0.0.0.0:{port}")
+        await asyncio.Future()
 
 if __name__ == "__main__":
     asyncio.run(main())
