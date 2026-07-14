@@ -35,6 +35,12 @@ sock = Sock(app)
 
 MODEL_PATH = "./LaterModelMadeWith120Epochs.pt"
 
+# ==========================================================
+# PERFORMANCE
+# ==========================================================
+
+YOLO_EVERY_N_FRAMES = 4
+
 PIVOT_X = 320
 PIVOT_Y = 50
 
@@ -45,8 +51,8 @@ PIXELS_PER_METRE = 320.0
 CONFIDENCE_THRESHOLD = 0.20
 
 lk_params = dict(
-    winSize=(21, 21),
-    maxLevel=3,
+    winSize=(31, 31),
+    maxLevel=4,
     criteria=(
         cv2.TERM_CRITERIA_EPS |
         cv2.TERM_CRITERIA_COUNT,
@@ -62,6 +68,7 @@ lk_params = dict(
 logger.info("Loading YOLO model...")
 
 model = YOLO(MODEL_PATH)
+model.to("cpu")
 
 logger.info("YOLO loaded successfully.")
 
@@ -91,6 +98,7 @@ def websocket(ws):
 
     prev_gray = None
     prev_point = None
+    frame_counter = 0
 
     try:
 
@@ -135,54 +143,63 @@ def websocket(ws):
             )
 
             found_bob = False
-            tracked = False
+            cx = cy = 0.0   # default values, will be overwritten if found
 
             # -------------------------------------------------
-            # YOLO
+            # YOLO (only every N frames)
             # -------------------------------------------------
 
-            results = model(
-                frame,
-                verbose=False
-            )
+            frame_counter += 1
 
-            for result in results:
+            if (
+                frame_counter % YOLO_EVERY_N_FRAMES == 0
+                or prev_point is None
+            ):
 
-                for box in result.boxes:
+                small = cv2.resize(
+                    frame,
+                    (320, 240)
+                )
 
-                    confidence = float(
-                        box.conf[0]
-                    )
+                results = model(
+                    small,
+                    imgsz=320,
+                    verbose=False
+                )
 
-                    if confidence < CONFIDENCE_THRESHOLD:
-                        continue
+                sx = frame.shape[1] / 320.0
+                sy = frame.shape[0] / 240.0
 
-                    x1, y1, x2, y2 = (
-                        box.xyxy[0].tolist()
-                    )
+                for result in results:
 
-                    cx = (x1 + x2) / 2.0
-                    cy = (y1 + y2) / 2.0
+                    for box in result.boxes:
 
-                    prev_point = np.array(
-                        [[cx, cy]],
-                        dtype=np.float32
-                    )
+                        confidence = float(box.conf[0])
 
-                    found_bob = True
+                        if confidence < CONFIDENCE_THRESHOLD:
+                            continue
 
-                    logger.info(
-                        "Detection %.2f",
-                        confidence
-                    )
+                        x1, y1, x2, y2 = (
+                            box.xyxy[0].tolist()
+                        )
 
-                    break
+                        cx = ((x1 + x2) / 2.0) * sx
+                        cy = ((y1 + y2) / 2.0) * sy
 
-                if found_bob:
-                    break
+                        prev_point = np.array(
+                            [[cx, cy]],
+                            dtype=np.float32
+                        )
+
+                        found_bob = True
+
+                        break
+
+                    if found_bob:
+                        break
 
             # -------------------------------------------------
-            # Optical Flow
+            # Optical Flow (if YOLO didn't find anything)
             # -------------------------------------------------
 
             if (
@@ -207,10 +224,8 @@ def websocket(ws):
 
                     prev_point = next_point
 
-                    tracked = True
                     found_bob = True
 
-            prev_gray = gray.copy()
             # -------------------------------------------------
             # Compute Pendulum State
             # -------------------------------------------------
@@ -298,6 +313,9 @@ def websocket(ws):
                 json.dumps(state)
             )
 
+            # Update previous gray for next optical flow
+            prev_gray = gray.copy()
+
     except Exception as e:
 
         logger.exception(
@@ -310,7 +328,6 @@ def websocket(ws):
         logger.info(
             "Client disconnected"
         )
-
 
 # ==========================================================
 # LOCAL RUN
