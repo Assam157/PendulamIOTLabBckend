@@ -211,7 +211,7 @@ def websocket(ws):
                     found_bob = True
 
             prev_gray = gray.copy()
-                     # -------------------------------------------------
+            # -------------------------------------------------
             # Compute Pendulum State
             # -------------------------------------------------
 
@@ -297,7 +297,8 @@ def websocket(ws):
             ws.send(
                 json.dumps(state)
             )
-             except Exception as e:
+
+    except Exception as e:
 
         logger.exception(
             "WebSocket error: %s",
