@@ -1,5 +1,8 @@
-opencv-python>=4.8.0
-numpy>=1.24.0
-websockets>=11.0
-ultralytics>=8.0.0
-nest-asyncio>=1.5.0
+ flask
+flask-sock
+gunicorn
+ultralytics
+opencv-python-headless
+numpy
+torch
+torchvision
