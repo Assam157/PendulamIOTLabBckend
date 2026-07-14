@@ -7,7 +7,6 @@ import json
 import time
 from ultralytics import YOLO
 from collections import deque
-from websockets.asyncio.server import ServerConnection
 
 # =========================
 # CONFIG
@@ -27,15 +26,21 @@ lk_params = dict(
 model = YOLO(MODEL_PATH)
 
 # =========================
-# HEALTH CHECK (for Render port detection)
+# HEALTH CHECK (for Render)
 # =========================
-async def health_check(connection: ServerConnection, request):
-    """Answer health check HTTP requests; allow WebSocket upgrades."""
-    # If the client wants to upgrade to WebSocket, do nothing (proceed)
+async def health_check(connection, request):
+    """
+    Answer Render's HTTP health checks with 200 OK.
+    WebSocket upgrade requests are passed through (return None).
+    """
+    # If the client wants a WebSocket, let it through
     if request.headers.get("Upgrade", "").lower() == "websocket":
         return None
-    # Otherwise reply with a simple 200 OK
-    return connection.respond(200, "OK")
+
+    # Otherwise reply with a plain 200 (health check / keep‑alive)
+    await connection.respond(200, "OK")
+    # The connection is now handled – return the connection object
+    return connection
 
 # =========================
 # PER‑CLIENT PROCESSING
@@ -148,7 +153,7 @@ async def main():
         handler,
         "0.0.0.0",
         port,
-        process_request=health_check     # ← this fixes the health check
+        process_request=health_check
     ):
         print(f"WebSocket server (with health check) on 0.0.0.0:{port}")
         await asyncio.Future()
