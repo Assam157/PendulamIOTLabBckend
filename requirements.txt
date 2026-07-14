@@ -1,4 +1,4 @@
- flask
+flask
 flask-sock
 gunicorn
 ultralytics
